@@ -1,0 +1,113 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.fft import fft, fftshift
+from scipy.signal import butter, buttord, convolve, firwin, freqz, lfilter, kaiserord, iirdesign, welch, wiener
+from scipy.signal import spectrogram, impulse, correlate
+import h5py
+
+#Constants
+k_B = 1.381e-23  # Boltzmann constan [J/K]
+nperseg = 2**16
+channel = 14
+
+
+def load_data(filename):
+    #load directory
+    data = {}
+    
+    with h5py.File(filename, "r") as f:
+        # Load OBSATTRS
+        if "OBSATTRS" in f:
+            obs_group = f["OBSATTRS"]
+            data['freqs'] = obs_group["frequencies"][...]
+            data['times'] = obs_group["times"][...]
+        
+        # Load SPAXEL0
+        if "SPAXEL0" in f:
+            spax_group = f["SPAXEL0"]
+            data['data'] = spax_group["data"][...]
+            data['az']   = spax_group["az_spax"][...]
+            data['el']   = spax_group["el_spax"][...]
+
+        print(f"Successfully loaded: {filename}")
+        
+    return data
+
+
+#load all of the data
+tls_only   = load_data("blank_tls_only.h5")
+atm_photon = load_data("blank_atm_plus_photon.h5")
+atm_only = load_data("blank_atm_only.h5")
+
+#calculate the photon data
+photon_only_array = atm_photon['data'] - atm_only['data']
+
+# create a new dictionary for photon noise
+photon_only = {
+    'data': photon_only_array,
+    'times': atm_only['times'],
+    'freqs': atm_only['freqs'],
+    'az': atm_only['az'],
+    'el': atm_only['el']
+}
+
+sum_array = tls_only['data'] + atm_photon['data']
+
+# create a new dictionary for sum noise
+sum_array = {
+    'data': photon_only_array,
+    'times': atm_only['times'],
+    'freqs': atm_only['freqs'],
+    'az': atm_only['az'],
+    'el': atm_only['el']
+}
+
+
+
+#Determining the sample freq
+dt = np.mean(np.diff(sum_array['times']))
+fs = 1.0 / dt
+
+#Channel bandwidth (Needed to convert K to Watt using Johnson-Nyquist from literature source)
+#P = kTb
+bw = np.diff(sum_array["freqs"])
+channel_bw = bw[channel]
+
+print(f"Sampling Frequency (fs): {fs:.2f} Hz")
+print(f"Channel {channel} Bandwidth: {channel_bw:.2f} Hz")
+
+datasets = {
+    # "TLS Only": tls_only['data']
+    "Atmosphere Only": atm_only['data']
+    # "Photon Only": photon_only['data']
+    # 'Sum': sum_array['data']
+}
+
+plt.figure(figsize=(10, 6))
+
+for label, data_array in datasets.items():
+    # Extract the specific channel
+    if isinstance(data_array, dict):
+        x = data_array['data'][channel, :]
+    else:
+        x = data_array[channel, :]
+    
+    # Calculate Welch PSD
+    f_welch, Pxx = welch(x, fs=fs, nperseg=nperseg, detrend='constant')
+    
+    # Convert Kelvin PSD to Watt ASD
+    # Pxx is in [K^2/Hz], sqrt(Pxx) is [K/√Hz]
+    ASD_K = np.sqrt(Pxx) 
+    ASD_W = k_B * ASD_K * channel_bw
+    
+    # Plot to the same figure
+    plt.loglog(f_welch, ASD_W, label=label)
+
+plt.xlabel("Frequency (Hz)")
+plt.ylabel(r"ASD ($W/\sqrt{Hz}$)")
+plt.ylim(1e-19, 1e-16)
+plt.title(f"Comparison of Noise Components - Channel {channel}")
+plt.grid(True, which="both", linestyle="--", alpha=0.5)
+plt.legend()
+plt.tight_layout()
+plt.show()
