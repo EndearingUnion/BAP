@@ -1,0 +1,158 @@
+import numpy as np
+from scipy.fft import fft, ifft
+from scipy.signal import  wiener, welch
+from scipy.signal.windows import gaussian
+import matplotlib.pyplot as plt
+import h5py
+
+#Constants
+k_B = 1.381e-23  # Boltzmann constan [J/K]
+nperseg = 2**16
+
+#Select channel
+channel = 14
+
+
+def load_data(filename):
+    #load directory
+    data = {}
+    
+    with h5py.File(filename, "r") as f:
+        # Load OBSATTRS
+        if "OBSATTRS" in f:
+            obs_group = f["OBSATTRS"]
+            data['freqs'] = obs_group["frequencies"][...]
+            data['times'] = obs_group["times"][...]
+        
+        # Load SPAXEL0
+        if "SPAXEL0" in f:
+            spax_group = f["SPAXEL0"]
+            data['data'] = spax_group["data"][...]
+            data['az']   = spax_group["az_spax"][...]
+            data['el']   = spax_group["el_spax"][...]
+
+        print(f"Successfully loaded: {filename}")
+        
+    return data
+
+
+#load all of the data
+tls_only   = load_data("blank_tls_only.h5")
+atm_photon = load_data("blank_atm_plus_photon.h5")
+atm_only = load_data("blank_atm_only.h5")
+
+#calculate the photon data
+photon_only = atm_photon['data'] - atm_only['data']
+
+# create a new dictionary for photon noise
+photon_only = {
+    'data': photon_only,
+    'times': atm_photon['times'],
+    'freqs': atm_photon['freqs'],
+    'az': atm_photon['az'],
+    'el': atm_photon['el']
+}
+sum = tls_only['data'] + atm_photon['data']
+
+# create a new dictionary for sum noise
+sum = {
+    'data': sum,
+    'times': atm_photon['times'],
+    'freqs': atm_photon['freqs'],
+    'az': atm_photon['az'],
+    'el': atm_photon['el']
+}
+
+#Wiener filter adapted from Le-Anh Tran (source: Wiener filter)
+def gaussian_kernel(kernel_size=3):
+    h = gaussian(kernel_size, kernel_size / 3)   
+    #h = np.dot(h, h.transpose())                    #We don't do this we doen want a 2d gaussian matrix           
+    h /= np.sum(h)
+    return h
+
+
+# Create a kernel                           Mabey use machine learning ot find best kernal size
+my_kernel = gaussian_kernel(kernel_size=5)
+
+def wiener_filter(data, noise_data, kernel):
+    data = np.asarray(data)
+    noise_data = np.asarray(noise_data)
+    
+    #put in to frequency domain
+    data = fft(data)
+    kernel = fft(kernel, n=data.size)
+    
+    # Estimate Power Spectral Densities use the magnitude squared of the FFTs as an estimate for PSD
+    psd_noise = np.abs(fft(noise_data))**2
+    psd_signal = np.abs(data)**2
+
+    # Calculate frequency-dependent K(f) = Pn(f) / Ps(f)
+    K_f = psd_noise / psd_signal
+    
+    # 4. Apply Wiener Gain formula
+    # H* / (|H|^2 + K(f))
+    gain = np.conj(kernel) / (np.abs(kernel)**2 + K_f)
+    
+    filtered_data = data * gain
+    filtered_data = np.abs(ifft(filtered_data))
+    return filtered_data
+
+#use root mean square to asses performance
+def wiener_rms (raw_data, filtered_data):
+    return np.sqrt((np.mean(filtered_data-raw_data)**2))
+
+filtered_data = wiener_filter(atm_photon['data'][channel], tls_only['data'][channel], my_kernel)
+
+rms = wiener_rms(tls_only['data'][channel], filtered_data)
+
+print('RMS:', rms)
+
+#Determining the sample freq
+dt = np.mean(np.diff(sum['times']))
+fs = 1.0 / dt
+
+#Channel bandwidth (Needed to convert K to Watt using Johnson-Nyquist from literature source)
+#P = kTb
+bw = np.diff(sum["freqs"])
+channel_bw = bw[channel]
+
+print(f"Sampling Frequency (fs): {fs:.2f} Hz")
+print(f"Channel {channel} Bandwidth: {channel_bw:.2f} Hz")
+
+datasets = {
+    "TLS Only": tls_only['data'],
+    "Atmosphere Only": atm_only['data'],
+    "Photon Only": photon_only['data'],
+    # 'Sum': sum['data'],
+    'Filtered Data': filtered_data,
+    'Atmophere + Photon': atm_photon['data']
+}
+
+
+plt.figure(figsize=(10, 6))
+
+for label, data_array in datasets.items():
+   #Welch PSD estimate (from EE3S1 Lab)
+    if data_array.ndim > 1:
+        x = data_array[channel, :]
+    else:
+        x = data_array                             #Unit is Kelvin
+    
+    f_welch, Pxx = welch(x, fs=fs, nperseg=nperseg, detrend='constant')
+    
+    # Convert Kelvin PSD to Watt ASD
+    # Pxx is in [K^2/Hz], sqrt(Pxx) is [K/√Hz]
+    ASD_K = np.sqrt(Pxx)                                    #ASD in [K/√Hz]
+    ASD_W = k_B*ASD_K*channel_bw                            #ASD in [W/√Hz]            available noise power telecommunication and sensing lecture 3 slide 10
+    
+    # Plot the ADS of all the data in the same plot
+    plt.loglog(f_welch, ASD_W, label=label)
+    
+
+plt.xlabel("Frequency (Hz)")
+plt.ylabel(r"ASD ($W/\sqrt{Hz}$)")
+plt.title(f"Comparison of Noise Components - Channel {channel}")
+plt.grid(True, which="both", linestyle="--", alpha=0.5)
+plt.legend()
+plt.tight_layout()
+plt.show()
