@@ -6,11 +6,11 @@ from scipy.signal import spectrogram, impulse, correlate
 
 import h5py
 
-
+from BAP_functions import *
 
 
 #reading the data
-f = h5py.File("blank_tls_only.h5", "r")
+f = h5py.File("blank_atm_plus_photon.h5", "r")
 for group in f:                                 #Print the groups in blank_tls_only
     print(group)
 # metadata = f["OBSATTRS"][...] #second element selects the array in the group
@@ -41,67 +41,10 @@ n_samples = len(times)
 print("length data =", n_samples)
 dt = np.mean(np.diff(times))   #Average sampling interval
 fs = 1.0 / dt
-channel = 50
+channel = 14
 k_B = 1.380649e-23  # Boltzmann constan [J/K]
 nperseg = 2**16
 
-
-
-
-
-
-#This chunk of code is taken from  www.socsci.ru.nl/wilberth/python/noise.html by drs. W.C.P. van Ham and altered to fit our project
-def pink_spectrum(f, beta=beta, f_min = 0, f_max = np.inf):
-    """
-    Define a pink (1/f) spectrum
-        f     = array of frequencies
-        f_min = minimum frequency for band pass
-        f_max = maximum frequency for band pass
-    """
-    #Power = Amplitude^2, so Power ~ (f^-(beta/2))^2 = f^-beta 
-    s = f**-(beta/2.0)  #To achieve the amplitude spectrum [W/√Hz]
-    #s[np.logical_or(f < f_min, f > f_max)] = 0    # apply band pass
-    return s
-
-
-
-
-
-
-#This chunk of code is based on the code from www.socsci.ru.nl/wilberth/python/noise.html by drs. W.C.P. van Ham and altered to fit our project
-
-
-def tls_noise_estimation(n_samples, fs):
-    freqs = np.fft.rfftfreq(n_samples, d=1/fs)  #Real FFT for real-valued time signals
-                                                #d is the interval between each sample
-                                                #n_samples = len(f["SPAXEL0"]["data"][...])
-    spectrum = np.zeros_like(freqs, dtype='complex')      # make complex numbers for spectrum
-    spectrum[1:] = pink_spectrum(freqs[1:])               # get spectrum amplitude for all frequencies except f=0, to aviod div by 0
-    phases = np.random.uniform(0, 2*np.pi, len(freqs)-1)  # random phases for all frequencies except f=0
-    spectrum[1:] *= np.exp(1j*phases)                     # apply random phases to the amplitude
-    noise = np.fft.irfft(spectrum, n=n_samples) # return the reverse fourier transform to get time series
-    #noise = np.pad(noise, (0, n_samples - len(noise)), 'constant') # add zero for odd number of input samples
-    
-    return noise
-
-
-
-
-def scalar(Pxx, Pxx_estimation):
-    scalar = np.mean(Pxx/Pxx_estimation)
-    return scalar
-
-
-
-
-
-#Channel bandwidth (NEeded to convert K to Watt using Johnson-Nyquist from literature source)
-#P = kTb telecommunications and sensing lecture 3 slide 10
-def channel_bandwidth(channel):
-    bw = np.diff(frequencies)
-    channel_bw = bw[channel]
-    #print("channel bandwidth = ", channel_bw)
-    return channel_bw
 
 
 #TLS noise estimation
@@ -127,6 +70,8 @@ _, Pxx_estimation = welch(tls_estimate, fs=fs, nperseg = nperseg, detrend='const
 
 scaling_factor = np.mean(Pxx_actual[1:] / Pxx_estimation[1:])
 Pxx_estimation_scaled = Pxx_estimation*scaling_factor
+
+
 #Pxx_estimation_scaled = Pxx_estimation*scalar(Pxx_actual, Pxx_estimation)
 
 #ASD_estimation_scaled = np.sqrt(Pxx_estimation_scaled)*channel_bandwidth(channel)*k_B #ASD in [w/√Hz]
@@ -137,9 +82,22 @@ ASD_estimation = np.sqrt(Pxx_estimation_scaled) * k_B #[w/√Hz]
 
 
 
+#plotting a tls model to test the found parameters
+tls_model_psd = np.zeros_like(f_welch)
+tls_model_psd[1:] = f_welch[1:]**-(beta)
+scaling_factor = np.median(Pxx_actual[1:] / tls_model_psd[1:])
+
+tls_model_scaled = scaling_factor*tls_model_psd
+ASD_model = np.sqrt(tls_model_scaled) * k_B
+
+print("scaling factor =", scaling_factor)
+
+
+
 plt.figure()
 plt.loglog(f_welch, ASD_actual, label="Actual TLS noise", alpha=0.7)
 plt.loglog(f_welch, ASD_estimation, label="Estimated TLS noise", color = 'orange')
+plt.loglog(f_welch, ASD_model, label="Modelled TLS noise", color = 'green')
 plt.xlabel("Frequency (Hz)")
 plt.ylabel("PSD (W/√Hz)")
 plt.title(f"Comparison of Estimated vs. Actual TLS nosie")

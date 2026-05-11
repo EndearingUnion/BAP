@@ -12,12 +12,12 @@ k_B = 1.381e-23  # Boltzmann constan [J/K]
 
 
 #Select channel
-channel = 14
+channel = 270
 
 
 
 #reading the data
-f = h5py.File("blank_tls_only.h5", "r")
+f = h5py.File("blank_atm_only.h5", "r")
 for group in f:                                 #Print the groups in blank_tls_only
     print(group)
 # metadata = f["OBSATTRS"][...] #second element selects the array in the group
@@ -53,8 +53,6 @@ f.close()
 
 
 
-
-
 #Determining the sample freq
 dt = np.mean(np.diff(times))   #Average sampling interval
 fs = 1.0 / dt
@@ -62,12 +60,6 @@ fs = 1.0 / dt
 print("dt =", dt)
 print("fs =", fs)
 
-
-#Channel bandwidth (NEeded to convert K to Watt using Johnson-Nyquist from literature source)
-#P = kTb
-bw = np.diff(frequencies)
-channel_bw = bw[channel]
-print("channel bandwidth = ", channel_bw)
 
 
 #Welch PSD estimate (from EE3S1 Lab)
@@ -78,7 +70,7 @@ nperseg = 2**16
 f_welch, Pxx = welch(x, fs=fs, nperseg = nperseg, detrend='constant') #Unit [K/Hz]
 
 ASD_K = np.sqrt(Pxx) #ASD in [K/√Hz]
-ASD_W = k_B*ASD_K*channel_bw #ASD in [W/√Hz]            available noise power telecommunication and sensing lecture 3 slide 10
+ASD_W = k_B*ASD_K #ASD in [W/√Hz]            available noise power telecommunication and sensing lecture 3 slide 10
 
 plt.figure()
 plt.loglog(f_welch, ASD_W, label="TLS noise")
