@@ -2,6 +2,31 @@ import numpy as np
 scaling_factors = np.load("tls_scaling_factors.npy") #import the scaling factors
 
 
+#Load data function
+
+def load_data(filename):
+    #load directory
+    data = {}
+    
+    with h5py.File(filename, "r") as f:
+        # Load OBSATTRS
+        if "OBSATTRS" in f:
+            obs_group = f["OBSATTRS"]
+            data['freqs'] = obs_group["frequencies"][...]
+            data['times'] = obs_group["times"][...]
+        
+        # Load SPAXEL0
+        if "SPAXEL0" in f:
+            spax_group = f["SPAXEL0"]
+            data['data'] = spax_group["data"][...]
+            data['az']   = spax_group["az_spax"][...]
+            data['el']   = spax_group["el_spax"][...]
+
+        print(f"Successfully loaded: {filename}")
+        
+    return data
+
+
 #Noise estimation functions
 
 #This chunk of code is taken from  www.socsci.ru.nl/wilberth/python/noise.html by drs. W.C.P. van Ham and altered to fit our project
