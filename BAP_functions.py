@@ -1,31 +1,8 @@
 import numpy as np
 scaling_factors = np.load("tls_scaling_factors.npy") #import the scaling factors
-
-
-#Load data function
-
-def load_data(filename):
-    #load directory
-    data = {}
-    
-    with h5py.File(filename, "r") as f:
-        # Load OBSATTRS
-        if "OBSATTRS" in f:
-            obs_group = f["OBSATTRS"]
-            data['freqs'] = obs_group["frequencies"][...]
-            data['times'] = obs_group["times"][...]
-        
-        # Load SPAXEL0
-        if "SPAXEL0" in f:
-            spax_group = f["SPAXEL0"]
-            data['data'] = spax_group["data"][...]
-            data['az']   = spax_group["az_spax"][...]
-            data['el']   = spax_group["el_spax"][...]
-
-        print(f"Successfully loaded: {filename}")
-        
-    return data
-
+wls_param = np.load("tls_wls_params.npy")
+wls_param_knee = np.load("tls_wls_params_fknee.npy")
+wls_param_alg = np.load("tls_wls_params_alg.npy")
 
 #Noise estimation functions
 
@@ -99,18 +76,19 @@ def wiener_filter(x_t, S_ss, S_nn):
 
 
 
-def tls_estimation(f_welch, channel, beta):         #Models the TLS based on alpha/f**-beta
+def tls_estimation(f_welch, channel, alpha, beta):         #Models the TLS based on alpha/f**-beta
     tls_model_psd = np.zeros_like(f_welch)
     tls_model_psd[1:] = f_welch[1:]**-(beta)        #Avoid first bin which is zero
-    tls_model_scaled = scaling_factors[channel]*tls_model_psd       #Scales the noise model
+    tls_model_scaled = alpha*tls_model_psd       #Scales the noise model
     
     return tls_model_scaled
+
 
 
 #Weighted Least Squares functions
 def power_law(f, alpha, beta):
     """Mathematical model for TLS noise: S(f) = alpha * f^-beta"""
-    return alpha * f**-beta
+    return (alpha * f**-beta) 
 
 def tls_estimation_wls(f_grid, A_fit, beta_fit): #uses the param found via WLS to model the TLS noise
     tls_model_psd = np.zeros_like(f_grid)
