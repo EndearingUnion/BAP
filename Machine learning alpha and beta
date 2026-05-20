@@ -1,0 +1,157 @@
+from scipy.signal import welch
+from scipy.optimize import curve_fit
+import h5py
+import pandas as pd
+import numpy as np
+from BAP_functions import *
+from sklearn.linear_model import LogisticRegression
+from sklearn.multiclass import OneVsRestClassifier
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+from sklearn.tree import DecisionTreeClassifier, plot_tree
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestRegressor
+import matplotlib.pyplot as plt
+from sklearn.multioutput import MultiOutputRegressor
+from sklearn.model_selection import train_test_split
+
+#Parameters
+input_tls_file = "blank_tls_only.h5"
+input_atm_photon_file = "blank_atm_plus_photon.h5"
+output_file = "tls_wls_params_fknee.npy" 
+output_file_alg = "tls_wls_params_alg.npy" 
+nperseg = 2**16
+channel = 14
+f_knee_atmos = 0.2 #Hz
+f_knee_photon = 8 #Hz
+
+with h5py.File(input_tls_file, "r") as f:
+    tls_blank = f["SPAXEL0"]["data"][...]
+    tls_blank_time = f["OBSATTRS"]["times"][...]
+
+with h5py.File(input_atm_photon_file, "r") as f:
+    atm_photon_blank = f["SPAXEL0"]["data"][...]
+
+
+#find time and frequency
+dt = np.mean(np.diff(tls_blank_time))
+fs = 1.0 / dt
+num_channels = tls_blank.shape[0]
+
+
+#combine the data (Wiener filter is tested on)
+combined_data = tls_blank + atm_photon_blank
+
+#compute the welch PSD
+f_welch, Pxx_combined = welch(combined_data[channel, :], fs=fs, nperseg=nperseg, detrend='constant')
+_, Pxx_tls            = welch(tls_blank[channel, :], fs=fs, nperseg=nperseg, detrend='constant')
+_, Pxx_photon_blank   = welch(atm_photon_blank[channel, :], fs=fs, nperseg=nperseg, detrend='constant')
+
+
+#choce the right frequency range for the power law
+seg = (f_welch > f_knee_atmos) & (f_welch < f_knee_photon) #Ensures that WLS is fitted on the segment between the knee freq
+f_fit = f_welch[seg]
+Pxx_tls_fit = Pxx_tls[seg]
+
+
+def fit_wls(log_f, log_Pxx, weights):
+    X = np.column_stack([log_f, np.ones(len(log_f))])  #slope*log(f) + intercepot
+    W = np.diag(weights)                               #Diagonal matrix of the weights
+    XtW = X.T @ W
+    params = np.linalg.solve(XtW @ X, XtW @ log_Pxx)   #WLS solution
+    slope, log_alpha = params                          #things the WLS finds
+    beta  = -slope                                     #transforming back from log
+    alpha = np.exp(log_alpha)                          #transform back from log
+    return alpha, beta    
+
+
+#Create feature and label lists
+all_features = []  # log-PSD of combined signal per channel
+all_labels   = []  # alph and beta from WLS on TLS only per channel
+
+
+for ch in range(num_channels):
+    #compute the welch PSD
+    _, Pxx_total_ch = welch(combined_data[ch, :], fs=fs, nperseg=nperseg, detrend='constant')
+    _, Pxx_tls_ch  = welch(tls_blank[ch, :], fs=fs, nperseg=nperseg, detrend='constant')
+    Pxx_total_fit   = Pxx_total_ch[seg]
+    Pxx_tls_fit_ch = Pxx_tls_ch[seg]
+    
+    #find log power of total PSD
+    log_Pxx_total   = np.log(Pxx_total_fit)
+
+    # remove  zero or non-finite PSD values
+    if np.any(Pxx_tls_fit_ch <= 0) or np.any(~np.isfinite(Pxx_tls_fit_ch)):
+        print(f"Channel {ch}: skipping bad PSD values")
+        all_features.append(log_Pxx_total)
+        all_labels.append([np.nan, np.nan])
+        continue
+    
+    #Find WLS classic way to train the model
+    w = 1.0 / Pxx_tls_fit_ch
+    w /= w.sum()
+    alpha_ch, beta_ch = fit_wls(np.log(f_fit), np.log(Pxx_tls_fit_ch), w)
+    
+    #add features and labels in a list
+    all_features.append(log_Pxx_total)
+    all_labels.append([alpha_ch, beta_ch])
+
+#make an array 
+all_features = np.array(all_features)  
+all_labels   = np.array(all_labels)  
+
+# Remove invalid channels
+valid = ~np.isnan(all_labels[:, 0])
+print(f"Valid channels: {valid.sum()} / {num_channels}")
+all_features = all_features[valid]
+all_labels   = all_labels[valid]
+
+print("shape of features: ", all_features.shape)
+print("shape of labels:", all_labels.shape)
+
+
+#create copy to prefent overwriting
+all_labels_scaled = all_labels.copy()
+
+# Transform alpha to log-space
+all_labels_scaled[:, 0] = np.log(all_labels[:, 0])
+
+# train test split 80% to 20%
+X_train, X_test, y_train, y_test = train_test_split(
+    all_features, all_labels_scaled, test_size=0.2, random_state=42
+)
+
+#initilize random forest with multioutput --> want to predic both alpha and beta
+rf = MultiOutputRegressor(
+    RandomForestRegressor(n_estimators=150, max_depth=12, random_state=42)
+)
+rf.fit(X_train, y_train)
+
+# Evaluate on test data
+y_pred = rf.predict(X_test)
+
+#  Predict for check channel --> test channel is 14
+test_features = all_features[channel].reshape(1, -1)
+pred_scaled = rf.predict(test_features)[0]
+
+# Apply np.exp only to the alpha parameter to find back in the normal space
+pred_alpha = np.exp(pred_scaled[0])
+pred_beta = pred_scaled[1]
+
+print(f"ML predicted of channel {channel} alpha={pred_alpha:.6e}, beta={pred_beta:.4f}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
