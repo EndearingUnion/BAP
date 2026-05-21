@@ -1,15 +1,7 @@
 from scipy.signal import welch
-from scipy.optimize import curve_fit
 import h5py
-import pandas as pd
 import numpy as np
 from BAP_functions import *
-from sklearn.linear_model import LogisticRegression
-from sklearn.multiclass import OneVsRestClassifier
-from sklearn.cluster import KMeans
-from sklearn.decomposition import PCA
-from sklearn.tree import DecisionTreeClassifier, plot_tree
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import RandomForestRegressor
 import matplotlib.pyplot as plt
 from sklearn.multioutput import MultiOutputRegressor
@@ -18,8 +10,7 @@ from sklearn.model_selection import train_test_split
 #Parameters
 input_tls_file = "blank_tls_only.h5"
 input_atm_photon_file = "blank_atm_plus_photon.h5"
-output_file = "tls_wls_params_fknee.npy" 
-output_file_alg = "tls_wls_params_alg.npy" 
+weight_matrix_14 = "weight_matrix_14.npy" 
 nperseg = 2**16
 channel = 14
 f_knee_atmos = 0.2 #Hz
@@ -46,12 +37,12 @@ combined_data = tls_blank + atm_photon_blank
 f_welch, Pxx_combined = welch(combined_data[channel, :], fs=fs, nperseg=nperseg, detrend='constant')
 _, Pxx_tls            = welch(tls_blank[channel, :], fs=fs, nperseg=nperseg, detrend='constant')
 _, Pxx_photon_blank   = welch(atm_photon_blank[channel, :], fs=fs, nperseg=nperseg, detrend='constant')
+_,       S_ss         = welch(atm_photon_blank[channel, :], fs=fs, nperseg=nperseg, detrend='constant')
 
 
 #choce the right frequency range for the power law
 seg = (f_welch > f_knee_atmos) & (f_welch < f_knee_photon) #Ensures that WLS is fitted on the segment between the knee freq
-f_fit = f_welch[seg]
-Pxx_tls_fit = Pxx_tls[seg]
+
 
 
 def fit_wls(log_f, log_Pxx, weights):
@@ -62,12 +53,24 @@ def fit_wls(log_f, log_Pxx, weights):
     slope, log_alpha = params                          #things the WLS finds
     beta  = -slope                                     #transforming back from log
     alpha = np.exp(log_alpha)                          #transform back from log
-    return alpha, beta    
+    return alpha, beta, XtW  
+ 
+f_fit = f_welch[seg]
+Pxx_tls_fit = Pxx_tls[seg]
+log_Pxx_tls = np.log(Pxx_tls_fit)
+
+#old methode of WLS to have comparison point
+w = 1.0 / Pxx_tls_fit
+w /= w.sum()
+
+alpha_wls, beta_wls, _ = fit_wls(np.log(f_fit), log_Pxx_tls, w)
+print(f"WLS: alpha={alpha_wls:.6e}, beta={beta_wls:.4f}")
 
 
 #Create feature and label lists
 all_features = []  # log-PSD of combined signal per channel
 all_labels   = []  # alph and beta from WLS on TLS only per channel
+all_weights = []   #save weight to look at the weight matrix
 
 
 for ch in range(num_channels):
@@ -87,14 +90,15 @@ for ch in range(num_channels):
         all_labels.append([np.nan, np.nan])
         continue
     
-    #Find WLS classic way to train the model
+    #find alpha and beta for the tls of the channel to train the model on
     w = 1.0 / Pxx_tls_fit_ch
     w /= w.sum()
-    alpha_ch, beta_ch = fit_wls(np.log(f_fit), np.log(Pxx_tls_fit_ch), w)
+    alpha_ch, beta_ch, weights = fit_wls(np.log(f_fit), np.log(Pxx_tls_fit_ch), w)
     
     #add features and labels in a list
     all_features.append(log_Pxx_total)
     all_labels.append([alpha_ch, beta_ch])
+    all_weights.append(weights)
 
 #make an array 
 all_features = np.array(all_features)  
@@ -109,12 +113,22 @@ all_labels   = all_labels[valid]
 print("shape of features: ", all_features.shape)
 print("shape of labels:", all_labels.shape)
 
+# print("Weight matrix 14:" all_weights[channel])
 
+# np.save(weight_matrix_14, all_weights[channel])
 #create copy to prefent overwriting
 all_labels_scaled = all_labels.copy()
 
-# Transform alpha to log-space
+# Transform alpha to log-space --> make linear
 all_labels_scaled[:, 0] = np.log(all_labels[:, 0])
+
+#Keep the feature for testing
+check_features = all_features[channel].reshape(1, -1)
+check_labels   = all_labels_scaled[channel].reshape(1, -1)
+
+# Remove check channel from training data so
+all_features_train = np.delete(all_features, channel, axis=0)
+all_labels_train   = np.delete(all_labels_scaled, channel, axis=0)
 
 # train test split 80% to 20%
 X_train, X_test, y_train, y_test = train_test_split(
@@ -141,7 +155,19 @@ pred_beta = pred_scaled[1]
 print(f"ML predicted of channel {channel} alpha={pred_alpha:.6e}, beta={pred_beta:.4f}")
 
 
+S_nn_ml = tls_estimation(f_welch, channel, pred_alpha, pred_beta)
 
+
+plt.loglog(f_welch, Pxx_tls, label="Measured TLS")
+plt.loglog(f_welch, S_nn_ml, label="ML predicted model")
+plt.loglog(f_welch, tls_estimation(f_welch, channel, alpha_wls, beta_wls), 
+           label="WLS model", linestyle='--')
+plt.axvline(f_knee_atmos, color='red', linestyle='--')
+plt.axvline(f_knee_photon, color='red', linestyle='--')
+plt.title("Comparison Classic WLS and ML WLS")
+plt.legend()
+plt.grid(True, which="both")
+plt.show()
 
 
 
