@@ -1,0 +1,98 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.fft import fft, ifft, fftshift, fftfreq
+from scipy.signal import butter, buttord, convolve, firwin, freqz, lfilter, kaiserord, iirdesign, welch, wiener
+from scipy.signal import spectrogram, impulse, correlate
+import h5py
+import pickle
+
+#We have the following data model y = ax + n 
+
+with open('source.pkl', 'rb') as f:
+    source_dict = pickle.load(f)
+
+f.close()
+
+
+print(source_dict.keys())
+
+frequencies_source = source_dict['frequencies (Hz)']
+temp_source = source_dict['source temperature (K)']
+
+
+with h5py.File("blank_atm_only.h5", "r") as f:  
+    data_atm_blank = f["SPAXEL0"]["data"][...]
+    frequencies_atm_blank = f["OBSATTRS"]["frequencies"][...]
+    times_atm_blank = f["OBSATTRS"]["times"][...]
+
+f.close()
+
+with h5py.File("blank_atm_plus_photon.h5", "r") as f:  
+    data_atm_plus_photon_blank = f["SPAXEL0"]["data"][...]
+    frequencies_atm_plus_photon_blank = f["OBSATTRS"]["frequencies"][...]
+    times_atm_plus_phton_blank = f["OBSATTRS"]["times"][...]
+f.close()
+
+
+
+with h5py.File("blank_tls_only.h5", "r") as f:  
+    data_tls_blank = f["SPAXEL0"]["data"][...]
+    frequencies_tls_blank = f["OBSATTRS"]["frequencies"][...]
+    times_tls_blank = f["OBSATTRS"]["times"][...] 
+f.close()
+
+
+
+with h5py.File("source_atm_plus_photon.h5", "r") as f:  
+    data_atm_plus_photon_source = f["SPAXEL0"]["data"][...]
+    frequencies_atm_plus_photon_source = f["OBSATTRS"]["frequencies"][...]
+    times_atm_plus_phton_source = f["OBSATTRS"]["times"][...]
+    az_switched = f["OBSATTRS"]["az"][...]
+f.close()
+
+
+eta_atm = np.load("eta_atmosphere.npy") #Load eta_atm
+tls_noise_parameters = np.load("tls_wls_params_alg.npy")
+noise_normal = np.load("noise_level_channels.npy")
+noise_switching = np.load("noise_levels_switching.npy")
+wls_params_alg = np.load("tls_wls_params_alg.npy")
+
+print(wls_params_alg.shape)
+
+
+
+T_P_ATM = 273 #T_p,atm Kelvin
+
+num_channels = data_atm_blank.shape[0]
+num_times = len(times_atm_blank)
+dt = np.mean(np.diff(times_atm_plus_phton_source)) 
+
+
+plt.figure(figsize=(11, 5), dpi=100)
+
+plt.plot(frequencies_source[:300] / 1e9, noise_normal[:300], color='Red', linestyle='--', linewidth=1.5, label='No Position Switching')
+plt.plot(frequencies_source[:300] / 1e9, noise_switching[:300], color='Purple', linewidth=2, label='Position Switching')
+
+plt.title("Noise Level ($\sigma_x$) Comparison", fontsize=14, fontweight='bold')
+plt.xlabel("Frequencies (GHz)", fontsize=12)
+plt.ylabel("Noise Level $\sigma_x$ (Kelvin)", fontsize=12)
+plt.grid(True, which="both", linestyle="--", alpha=0.5)
+plt.legend(fontsize=11)
+plt.tight_layout()
+
+plt.show()
+
+
+plt.figure(figsize=(11, 5), dpi=100)
+
+plt.plot(range(300) , noise_normal[:300], color='Red', linestyle='--', linewidth=1.5, label='No Position Switching')
+plt.plot(range(300) , noise_switching[:300], color='Purple', linewidth=2, label='Position Switching')
+
+plt.title("Noise Level ($\sigma_x$) Comparison", fontsize=14, fontweight='bold')
+plt.xlabel("Channels", fontsize=12)
+plt.ylabel("Noise Level $\sigma_x$ (Kelvin)", fontsize=12)
+plt.grid(True, which="both", linestyle="--", alpha=0.5)
+plt.legend(fontsize=11)
+plt.tight_layout()
+
+plt.show()
