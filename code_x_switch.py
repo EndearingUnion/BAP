@@ -62,6 +62,8 @@ dt = np.mean(np.diff(times_atm_plus_phton_source))
 #data_source_tls_photon = data_atm_plus_photon_source + data_tls_blank - data_atm_blank
 
 x_opt_channels = np.zeros(num_channels)
+variance_channels = np.zeros(num_channels)
+noise_level_channels = np.zeros(num_channels)
 
 print("Shape eta_atm",eta_atm.shape)
 
@@ -124,5 +126,13 @@ for channel in range(300):
     x_opt = np.dot(a_vec_tilde, y_vec_tilde) / np.dot(a_vec_tilde, a_vec_tilde) #x optimal
     
     x_opt_channels[channel] = x_opt     #/d_switch
+
+    #         #varience = 1/sum(a_tile)
+    sum_a_vec_tilde = np.sum(a_vec_tilde**2)
+    variance_channels[channel] = (1/ sum_a_vec_tilde)
+    noise_level_channels[channel] = np.sqrt(variance_channels[channel])
+
     
     np.save("x_optimal_switching.npy", x_opt_channels )
+    np.save("x_varience_switching.npy", variance_channels)
+    np.save("noise_levels_switching", noise_level_channels)
