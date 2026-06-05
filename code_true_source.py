@@ -52,18 +52,26 @@ t_source = source_dict['source temperature (K)']
 
 x_opt = np.load("x_optimal.npy")
 x_opt_switch = np.load("x_optimal_switching.npy")
+x_opt_chopper = np.load("x_optimal_chopper.npy")
 
-#gt_source_switch = (data_tls_source - data_tls_blank).mean(axis=1)
-#gt_source_switch = (data_atm_source - data_atm_blank).mean(axis=1)
+
+
+
+
+
 
 plt.figure(figsize=(10, 6))
 plt.plot(frequencies_source / 1e9, t_source, label="Ground Truth ($x$)", color="black", linewidth=1)
-#plt.plot(frequencies_source / 1e9, x_opt, label="Reconstructed Source", color="red", alpha = 0.7, linewidth=1)
+
+#constant staring
+#plt.plot(frequencies_source / 1e9, x_opt, label="Reconstructed Source Constant Staring", color="red", alpha = 0.7, linewidth=1)
 
 #position switching
 plt.plot(frequencies_source / 1e9, x_opt_switch, label="Reconstructed Source Position Switching", color="green", linewidth=1, linestyle = '--')
-#plt.plot(frequencies_source / 1e9, data_tls_blank, label="TLS Noise", color="red", alpha = 0.7, linewidth=1 , linestyle = '--')
 
+
+#chopper method
+plt.plot(frequencies_source / 1e9, x_opt_chopper, label="Reconstructed Source Chopper Method", color="orange", linewidth=1, linestyle = '--')
 
 plt.xlabel("Frequency (GHz)")
 plt.ylabel("Source Temperature $T_A^*$ (Kelvin)")

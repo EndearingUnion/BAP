@@ -5,9 +5,7 @@ from scipy.signal import butter, buttord, convolve, firwin, freqz, lfilter, kais
 from scipy.signal import spectrogram, impulse, correlate
 from scipy.fft import fft, ifft, fftshift, fftfreq
 
-import h5py
-import pickle
-
+import h5py, pickle
 
 with open('source.pkl', 'rb') as f:
     source_dict = pickle.load(f)
@@ -19,6 +17,7 @@ print(source_dict.keys())
 
 frequencies_source = source_dict['frequencies (Hz)']
 temp_source = source_dict['source temperature (K)']
+
 
 
 f = h5py.File("blank_atm_only.h5", "r")
@@ -83,10 +82,12 @@ d_switch = np.mean(az_switched == 0)
 print(f"Duty Cycle: {d_switch}")              #Astronomisch correct om het duty cycle te noemen?
 
 
-
 x_opt_channels = np.zeros(num_channels)
 variance_channels = np.zeros(num_channels)
 noise_level_channels = np.zeros(num_channels)
+
+
+
 
 
 for channel in range(300):
@@ -97,42 +98,55 @@ for channel in range(300):
     C = tls_noise_parameters[channel, 2]        #Dit hernoemen, terminology klopt niet, is voor photon noise
     
     
+    
 
     a_vec = eta_atm[channel, :].copy()             #Atmoshpere transmission coefficient
-    off_source_mask = (az_switched != 0)            #Frequencies where looking off source              
+    off_source_mask = (az_switched != 0)            #Frequencies where looking off source 
+    on_source_mask = (az_switched == 0)             
     a_vec[off_source_mask] = 0                         #Sets a_vec(=eta) to zero
     
     
     y_vec = y[channel, :]   #y vec containing the source signal, photon and TLS noise
-
-        
-    freqs = fftfreq(num_times, d=dt)
-    S_nn = np.zeros_like(freqs)
+    y_vec_off = y_vec[off_source_mask]       #y vec containing off source measurement
+    y_vec_on = y_vec[on_source_mask]       #y vec containing on source measurement
     
-    nonzero_mask = freqs != 0
-    S_nn[nonzero_mask] = alpha * np.abs(freqs[nonzero_mask])**-beta + C #Is n in the model, photon and TLS noise
-    S_nn[~nonzero_mask] = C
+    min_length = min(len(y_vec_on), len(y_vec_off))     #Arrays have different sizes
+    z_vec = y_vec_on[:min_length] - y_vec_off[:min_length]  #z vec, chopper method
+    a_vec = a_vec[:min_length]
     
     
-    
-    W = 1.0 / np.sqrt(S_nn) #Rn ^-1/2, Snn = F{Rn}, Rn = F^-1{Snn}
-    y_vec_tilde = np.real(ifft(W * fft(y_vec))) #Whitening(?)
-    a_vec_tilde = np.real(ifft(W * fft(a_vec))) #Whitening(?)
-    
-    
-    x_opt = np.dot(a_vec_tilde, y_vec_tilde) / np.dot(a_vec_tilde, a_vec_tilde) #x optimal
+    x_opt = np.dot(a_vec, z_vec) / np.dot(a_vec, a_vec) #x optimal
     
     x_opt_channels[channel] = x_opt     #/d_switch
     
     
     #Performence metrics
-    sum_a_vec_tilde = np.sum(a_vec_tilde**2)
-    variance_channels[channel] = 1.0 / sum_a_vec_tilde
-    noise_level_channels[channel] = np.sqrt(variance_channels[channel])
+    # variance_channels[channel] = np.var(z_vec) / np.dot(a_vec, a_vec)
+    # noise_level_channels[channel] = np.sqrt(variance_channels[channel])
     
-np.save("x_optimal_switch.npy", x_opt_channels )
-np.save("PSW_variance_channels.npy", variance_channels)
-np.save("PSW_noise_level_channels.npy", noise_level_channels)
+    
+    
+np.save("x_optimal_chopper.npy", x_opt_channels )
+        
+
+
+# freqs, Pxx = welch(z_vec, fs=1/dt, nperseg=1024)
+
+# plt.figure(figsize=(10, 4))
+# plt.loglog(freqs, Pxx, linewidth=1.5)
+# plt.xlabel("Frequency (Hz)")
+# plt.ylabel("Z PSD ($K^2/Hz$)")
+# plt.title("Power Spectrum of $z$ (Should look flat)")
+# plt.grid(True, which="both", ls="--", alpha=0.5)
+# plt.show()
+
+
+np.save("x_optimal_chopper.npy", x_opt_channels )
+np.save("chopper_variance_channels.npy", variance_channels)
+np.save("chopper_noise_level_channels.npy", noise_level_channels)
 snr_channels = temp_source / np.where(noise_level_channels == 0, 1e-6, noise_level_channels)
-np.save("PSW_snr_channels.npy", snr_channels)
-np.save("PSW_optimal_switching.npy", x_opt_channels )
+np.save("chopper_snr_channels.npy", snr_channels)
+np.save("chopper_optimal_switching.npy", x_opt_channels )
+
+
+
