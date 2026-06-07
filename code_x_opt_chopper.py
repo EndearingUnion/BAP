@@ -79,6 +79,12 @@ snr_channels = np.zeros(num_channels)
 z_store = np.zeros((300, num_cycles))
 a_store = np.zeros((300, num_cycles))
 
+
+
+scaling_factor = 0.8
+
+
+
 for channel in range(300):
 
     alpha = tls_noise_parameters[channel, 0]
@@ -87,6 +93,7 @@ for channel in range(300):
 
     a_vec = eta_atm[channel, :].copy()
     n_vec = data_photon_tls_noise[channel]
+    atm_vec = data_atm_blank[channel]
 
     total_samples = num_cycles * samples_per_cycle
 
@@ -99,9 +106,14 @@ for channel in range(300):
         end_on_source = start_on_source + 6
         start_off_source = end_on_source
         end_off_source = start_off_source + 6
+        
+        
+        atm_on_mean  = np.mean(atm_vec[start_on_source:end_on_source])    
+        atm_off_mean = np.mean(atm_vec[start_off_source:end_off_source])
+        
 
-        y_on_source[i] = np.mean((a_vec[start_on_source:end_on_source] * temp_source[channel]) + n_vec[start_on_source:end_on_source])
-        y_off_source[i] = np.mean(n_vec[start_off_source:end_off_source])
+        y_on_source[i] = np.mean((a_vec[start_on_source:end_on_source] * temp_source[channel]) + n_vec[start_on_source:end_on_source]) + scaling_factor * atm_on_mean
+        y_off_source[i] = np.mean(n_vec[start_off_source:end_off_source]) + scaling_factor * atm_off_mean
         a_on_source[i] = np.mean(a_vec[start_on_source:end_on_source])
 
     z_vec = y_on_source - y_off_source
@@ -119,7 +131,7 @@ variance_channels[:300] = sigma_n_sq / a_dot_a
 noise_level_channels[:300] = np.sqrt(variance_channels[:300])
 snr_channels[:300] = temp_source[:300] / np.where(noise_level_channels[:300] == 0, 1e-6, noise_level_channels[:300])
 
-np.save("x_optimal_chopper.npy",   x_opt_channels)
-np.save("chopper_variance_channels.npy",    variance_channels)
-np.save("chopper_noise_level_channels.npy", noise_level_channels)
-np.save("chopper_snr_channels.npy",         snr_channels)
+np.save("x_optimal_chopper_atm_0.8.npy",   x_opt_channels)
+# np.save("chopper_variance_channels.npy",    variance_channels)
+# np.save("chopper_noise_level_channels.npy", noise_level_channels)
+# np.save("chopper_snr_channels.npy",         snr_channels)
