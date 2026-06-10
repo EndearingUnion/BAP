@@ -40,7 +40,7 @@ snr_channels = np.zeros(num_channels)
 t0 = 6 * dt 
 scaling_factor = 0
 
-# Separate the tracking vectors into continuous blocks of length num_cycles
+
 z_store = np.zeros((300, num_cycles))
 a_store = np.zeros((300, num_cycles))
 
@@ -72,12 +72,13 @@ for channel in range(300):
         
         a_on_series[i] = np.mean(a_vec[start_on_source:end_on_source])
         
-    # Construct a physically continuous chopped stream
+
     y_stream = y_on_series - y_off_series
     a_stream = a_on_series
 
     fs = 1 / dt
-    fs_downsampled = 1 / (dt * samples_per_cycle)
+    fs_downsampled = 1 / (dt * samples_per_cycle)       #cycle frequency
+    fs_phase = 1 / (dt * 6)                             #frequency of taking the mean of 6 samples
     
     N_z = len(y_stream)
     f_bins = fftfreq(N_z, d = 1 / fs_downsampled)
@@ -88,12 +89,12 @@ for channel in range(300):
         transfer_function = 4 * (np.sin(np.pi * f_new * t0)**2)     
         return transfer_function * estimated_noise
     
-    s_nn_downsampled = 0.5 * (s_nn_mod(f_bins / 2.0) + s_nn_mod((f_bins / 2.0) - (fs / 2.0))) 
-    s_nn_downsampled = s_nn_downsampled + C 
+    s_nn_downsampled = 0.5 * (s_nn_mod(f_bins / 2.0) + s_nn_mod((f_bins / 2.0) - (fs_phase / 2.0))) 
     
     
-    delta_f = fs_downsampled / N_z
-    W = (1 / np.sqrt(s_nn_downsampled)) * np.sqrt(delta_f)
+    
+
+    W = (1 / np.sqrt(s_nn_downsampled)) 
     
     z_vec_tilde = np.real(ifft(W * fft(y_stream))) 
     a_vec_tilde = np.real(ifft(W * fft(a_stream))) 
