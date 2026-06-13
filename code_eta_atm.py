@@ -6,6 +6,7 @@ from scipy.signal import spectrogram, impulse, correlate
 
 import h5py
 
+#Reads atmospheric noise only dataset
 with h5py.File("blank_atm_only.h5", "r") as f:  
     data_atm_blank = f["SPAXEL0"]["data"][...]
     frequencies_atm_blank = f["OBSATTRS"]["frequencies"][...]
@@ -13,7 +14,7 @@ with h5py.File("blank_atm_only.h5", "r") as f:
 
 f.close()
 
-T_P_ATM = 273 #T_p,atm Kelvin
+T_P_ATM = 273                           #T_p,atm Kelvin
 
 
 num_channels = data_atm_blank.shape[0]
@@ -30,8 +31,8 @@ for channel in range(num_channels):
     eta_atm[channel, :] = 1 - (data_atm_blank[channel, :] / T_P_ATM)      #eta_atm = 1-T_sky/T_p,atm
 
 
-np.save("eta_atmosphere.npy", eta_atm )
+np.save("eta_atmosphere.npy", eta_atm )                                     #Saves eta_atm for each point in time
 
-print(eta_atm[14, :])
+
 
 
