@@ -105,14 +105,14 @@ for channel in range(300):
     z_store[channel] = z_vec_tilde
     a_store[channel] = a_vec_tilde
     
-    # sum_a_vec_tilde = np.sum(a_vec_tilde**2)
-    # variance_channels[channel] = 1.0 / sum_a_vec_tilde
-    # noise_level_channels[channel] = np.sqrt(variance_channels[channel])
-    # snr_channels[:300] = temp_source[:300] / np.where(noise_level_channels[:300] == 0, 1e-6, noise_level_channels[:300])
+    sum_a_vec_tilde = np.sum(a_vec_tilde**2)
+    sum_a_vec       = np.sum(a_stream**2)
+    variance_channels[channel] = (sum_a_vec)/ (sum_a_vec_tilde**2 )
+    noise_level_channels[channel] = np.sqrt(variance_channels[channel])
 
-# np.save("z_whitened_chopper.npy", z_store)
+np.save("z_whitened_chopper.npy", z_store)
 np.save("x_optimal_chopper_whitened_atmosphere_included.npy",   x_opt_channels)
-# np.save("a_vec_tilde_chopper_whitened.npy", a_store)
-# np.save("chopper_variance_channels_whitened.npy",    variance_channels)
-# np.save("chopper_noise_level_channels_whitened.npy", noise_level_channels)
-# np.save("chopper_snr_channels_whitened.npy",         snr_channels)
+np.save("a_vec_tilde_chopper_whitened.npy", a_store)
+np.save("chopper_variance_channels_whitened.npy",    variance_channels)
+np.save("chopper_noise_level_channels_whitened.npy", noise_level_channels)
+np.save("chopper_snr_channels_whitened.npy",         snr_channels)
