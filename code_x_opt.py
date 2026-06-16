@@ -119,7 +119,8 @@ for channel in range(300):
     
     #Performence metrics
     sum_a_vec_tilde = np.sum(a_vec_tilde**2)
-    variance_channels[channel] = 1.0 / sum_a_vec_tilde
+    sum_a_vec       = np.sum(a_vec**2)
+    variance_channels[channel] = (sum_a_vec)/ (sum_a_vec_tilde**2 )
     noise_level_channels[channel] = np.sqrt(variance_channels[channel])
     
 np.save("x_optimal_cs.npy", x_opt_channels )
